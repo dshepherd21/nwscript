@@ -436,7 +436,13 @@ def drvmap(drive,path):
 		mapDrive(drive+":", "\\\\"+server+"\\"+drvpath, None, None,force=1)
 		print
 		return 0
+	elif "/" in path:
+		print "Old Path conversion"
+		print "Path is "+path
 
+
+
+excluded_commands=["map display","map errors","map ins"]
 
 parser = OptionParser()
 
@@ -510,7 +516,12 @@ for temp in lscript:
 cmds=scr.split("\r\n")
 
 for temp in cmds:
-	#print temp
+	temp=temp.lower()
+	for line in excluded_commands:
+		if line in temp:
+			print "Command Dropped"
+			break
+	
 	if "if member of".lower() in temp.lower():
 		#print "if member of found"
 		ifmarker=1
@@ -529,14 +540,15 @@ for temp in cmds:
 			print
 		
 	if ifprocess==1 and status==0 and "map" in temp.lower():
+		temp=temp.lower().replace("map root","map")
 		mapbits=temp.lower().split(" ")
 		#print mapbits[1]
 		drive,path=checkpath(mapbits[1])
 		#print drive,path
-		
 		status=drvmap(drive,path)
 			
 	if ifprocess==0 and "map" in temp.lower():
+		temp=temp.lower().replace("map root","map")
 		mapbits=temp.lower().split(" ")
 		#print mapbits[1]
 		drive,path=checkpath(mapbits[1])
