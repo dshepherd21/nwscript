@@ -13,6 +13,7 @@ import win32wnet
 import win32netcon
 from IPy import IP
 import socket
+import _winreg
 
 
 def dnslookup(address):
@@ -440,21 +441,26 @@ def drvmap(drive,path):
 		print "Old Path conversion"
 		print "Path is "+path
 
-
+def getLocalDomainSuffix():
+	"""Gets local machines DNS Suffix"""
+	explorer = _winreg.OpenKey(_winreg.HKEY_LOCAL_MACHINE,r"SYSTEM\CurrentControlSet\Services\TCPIP\Parameters")
+	value, type = _winreg.QueryValueEx(explorer, "NV Domain")
+	#print value,type
+	return value
 
 excluded_commands=["map display","map errors","map ins"]
 
 parser = OptionParser()
 
 parser.add_option("-d","--dn",help="Edir Login Script")
-parser.add_option("-l","--home",help="Home Dir Drive Letter")
+#parser.add_option("-l","--home",help="Home Dir Drive Letter")
 parser.add_option("-n","--nurm",help="NURM XML Group File Path")
 parser.add_option("-u","--unc",help="UNC Paths for NSS For AD")
-parser.add_option("-s","--suffix",help="AD DNS Suffix")
+#parser.add_option("-s","--suffix",help="AD DNS Suffix")
 
 (options, args) = parser.parse_args()
 
-required=["dn","home","nurm","unc","suffix"]
+required=["dn","nurm","unc"]
 
 for m in required:
 	if not options.__dict__[m]:
@@ -465,7 +471,8 @@ for m in required:
 status=0
 nurm=options.nurm
 dn=options.dn
-suffix=options.suffix
+#suffix=options.suffix
+suffix=getLocalDomainSuffix()
 edir,aduser=connect()
 volist=options.unc
 
