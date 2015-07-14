@@ -8,13 +8,28 @@ import ldif
 import ldap.modlist as modlist
 from xml.dom import minidom
 from optparse import OptionParser
+import pyad
 from pyad import aduser
 import win32wnet
 import win32netcon
 from IPy import IP
 import socket
 import _winreg
+#pyad.pyad_setdefaults(ldap_server="192.168.10.51")
 
+
+def edirconf(ldapsrvr,basedn,user,pw):
+	try:
+		confitems=findos(ldapsrvr,basedn,user,pw)
+	except:
+		print "ERROR: No NSS Config Data"
+		sys.exit(-1)
+	
+	for temp in confitems:
+		volume=temp[1]["nssADvols"]
+		groups=temp[1]["nssADgrps"]
+
+	return groups,volume
 
 def dnslookup(address):
 	try:
@@ -119,9 +134,11 @@ def search(xml,tag,offset=0):
 def xmlparse(fname):
 	"""Parse XML File Created by Norm"""
 	grplist=[]
+	fname=fname[0]
 	
 	#print "xml parse called"
-	xmldoc = minidom.parse(fname)
+	#xmldoc = minidom.parse(fname)
+	xmldoc=minidom.parseString(fname)
 	ftype=search(xmldoc,"type")
 	#filetype=xmldoc.getElementsByTagName('type')[0]
 	#ftype=filetype.childNodes[0].data
@@ -206,8 +223,8 @@ def ldapcr(srv,user,passw,name,dn,attrs,naming):
 	return(status)
 
 def findos(ldapsrv,base_dn,user,passw):
-	print ldapsrv
-	print base_dn
+	
+	ldap.set_option(ldap.OPT_X_TLS_REQUIRE_CERT, ldap.OPT_X_TLS_NEVER)
 	l=ldap.initialize(ldapsrv)
 	try:
 		#l.start_tls_s()
@@ -225,8 +242,8 @@ def findos(ldapsrv,base_dn,user,passw):
 	except ldap.NO_SUCH_OBJECT:
 		print "Object Not Found"
 		sys.exit()
-	attrs = ['o']
-	filter='(objectclass=Organization)'
+	attrs = ['O','objectclass','nssADgrps','nssADvols']
+	filter='(objectclass=nssADconf)'
 	grplist=l.search_s( base_dn,ldap.SCOPE_SUBTREE,filter,attrs)
 	return(grplist)
 
@@ -286,6 +303,7 @@ def findgroups(ldapsrv,base_dn,user,passw):
 def findous(ldapsrv,base_dn,user,passw):
 	#print base_dn
 	#print ldapsrv
+	ldap.set_option(ldap.OPT_X_TLS_REQUIRE_CERT, ldap.OPT_X_TLS_NEVER)
 	l=ldap.initialize(ldapsrv)
 	try:
 		#l.start_tls_s()
@@ -410,7 +428,7 @@ def drvmap(drive,path):
 	print "Mapping Drive "+drive+": to "+path
 	print "==========================================="
 	print path
-	if path+"\n" not in volumes:
+	if path not in volumes:
 		print "NSSAD Volume not Found"
 		return -1
 
@@ -440,6 +458,7 @@ def drvmap(drive,path):
 	elif "/" in path:
 		print "Old Path conversion"
 		print "Path is "+path
+		
 
 def getLocalDomainSuffix():
 	"""Gets local machines DNS Suffix"""
@@ -448,19 +467,22 @@ def getLocalDomainSuffix():
 	#print value,type
 	return value
 
+
 excluded_commands=["map display","map errors","map ins"]
 
 parser = OptionParser()
 
 parser.add_option("-d","--dn",help="Edir Login Script")
-#parser.add_option("-l","--home",help="Home Dir Drive Letter")
+parser.add_option("-l","--home",help="Home Dir Drive Letter")
 parser.add_option("-n","--nurm",help="NURM XML Group File Path")
-parser.add_option("-u","--unc",help="UNC Paths for NSS For AD")
+parser.add_option("-c","--conf",help="Config in EDIR")
 #parser.add_option("-s","--suffix",help="AD DNS Suffix")
+
 
 (options, args) = parser.parse_args()
 
-required=["dn","nurm","unc"]
+#required=["dn","nurm","unc"]
+required=["dn","conf"]
 
 for m in required:
 	if not options.__dict__[m]:
@@ -471,10 +493,15 @@ for m in required:
 status=0
 nurm=options.nurm
 dn=options.dn
-#suffix=options.suffix
 suffix=getLocalDomainSuffix()
 edir,aduser=connect()
-volist=options.unc
+conf=options.conf
+
+#confitems=findos("ldap://"+edir[0]+":389",conf,edir[1],edir[2])
+nurm,volumes=edirconf("ldaps://"+edir[0],conf,edir[1],edir[2])
+if len(nurm)==0 or len(volumes)==0:
+	print "ERROR: No Configuration Information in EDIR"
+	sys.exit(-1)
 
 
 os.system("cls")
@@ -482,35 +509,15 @@ os.system("cls")
 
 print "LDAP Server is \t\t"+edir[0]+":389"
 print "User Proxy is \t\t"+edir[1]
-print "NURM Mapping File \t"+nurm
 print "AD DNS Suffix \t\t"+suffix
-print "UNC Volume list\t\t"+volist
+print "EDIR CONF \t\t"+conf
 print 
-print "Checking for Existance of NURM Group Mapping File.."
-print
-if os.path.isfile(nurm):
-	print "STATUS: File Found"
-else:
-	print "ERROR: File Not Found."
-	sys.exit()
 
-print
-print "Checking for Existance of VOLIST File...."
-print 
-if os.path.isfile(volist):
-	print "STATUS Volist Found"
-	volumes=open(volist,"r").readlines()
-	#print volumes
-else:
-	print "ERROR File not Found"
-	sys.exit()
 grp=xmlparse(nurm)
 
-
-#print "User Passord is \t"+edir[2]
 print "\n"
 
-lscript=findous("ldap://"+edir[0]+":389",dn,edir[1],edir[2])
+lscript=findous("ldaps://"+edir[0],dn,edir[1],edir[2])
 l=len(lscript)
 if l==0:
 	print "ERROR: No Login Script found in EDIR"
