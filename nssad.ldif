@@ -1,0 +1,49 @@
+version: 1
+
+
+
+# Record 1
+dn: cn=schema
+changetype: modify
+add: objectClasses
+objectClasses: ( 
+  2.16.840.1.113719.3.38563.6.1.1 
+  NAME 'nssADconf' 
+  AUXILIARY
+  MUST ( 'o' ) 
+  MAY ( 'nssADgrps' $ 'nssADvols' ) 
+  X-NDS_NOT_CONTAINER '1'
+  )
+# ldap map: "o" <- "O"
+
+
+
+# Record 2
+# Syntax CI_STRING
+# generated ASN2
+dn: cn=schema
+changetype: modify
+add: attributetypes
+attributetypes: (
+ 2.16.840.1.113719.3.38563.4.2.1 
+  NAME 'nssADgrps' 
+  SYNTAX '1.3.6.1.4.1.1466.115.121.1.15' 
+  SINGLE-VALUE
+  X-NDS_NOT_SCHED_SYNC_IMMEDIATE '1'
+  )
+
+
+
+# Record 3
+# Syntax CI_STRING
+# generated ASN2
+dn: cn=schema
+changetype: modify
+add: attributetypes
+attributetypes: (
+ 2.16.840.1.113719.3.38563.4.3.1 
+  NAME 'nssADvols' 
+  SYNTAX '1.3.6.1.4.1.1466.115.121.1.15' 
+  X-NDS_NOT_SCHED_SYNC_IMMEDIATE '1'
+  )
+
