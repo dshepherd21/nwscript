@@ -435,7 +435,13 @@ def adgrp(grps,name):
 
 def connect():
 	user=os.environ["USERNAME"]
-	print user
+	user1=getusername()
+	if user1=="error":
+		print "short user is correct"
+	else:
+		user=user1
+	print "user "+user
+		
 	adhandle=aduser.ADUser.from_cn(user)
 	print adhandle	
 	#print adhandle.adsPath
@@ -492,6 +498,16 @@ def drvmap(drive,path):
 		mapDrive(drive+":", unc,None,None,force=1)
 		print 
 		return 0
+
+def getusername():
+	try:
+		explorer = _winreg.OpenKey(_winreg.HKEY_LOCAL_MACHINE,r"SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\LogonUI")
+		value, type = _winreg.QueryValueEx(explorer, "LastLoggedOnDisplayName")
+	except:
+		value="error"
+	return value
+	
+	
 
 def getLocalDomainSuffix():
 	"""Gets local machines DNS Suffix"""
