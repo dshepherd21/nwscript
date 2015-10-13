@@ -18,6 +18,31 @@ import socket
 import _winreg
 import win32api
 #pyad.pyad_setdefaults(ldap_server="192.168.10.51")
+from Crypto.Cipher import DES
+
+def pad(key):
+	if len(key)>8:
+		padl=16
+	else:
+		padl=8
+	key=key+" "*(padl-len(key))
+	print key,":"
+	print len(key)
+	return(key)
+
+def encrypt(pw,key1):
+	print pw,key1
+	print key1
+	obj=DES.new(key1,DES.MODE_ECB)
+	ciph=obj.encrypt(pw)
+	return (ciph)
+
+def decrypt(pw,key):
+	obj=DES.new(key,DES.MODE_ECB)
+	pw=obj.decrypt(pw)
+	pw=pw.replace(" ","")
+	return(pw)
+
 
 def listdrives():
 	drives = win32api.GetLogicalDriveStrings()
@@ -435,19 +460,24 @@ def adgrp(grps,name):
 
 def connect():
 	user=os.environ["USERNAME"]
+	domain=os.environ["USERDOMAIN"]
+	domain=pad(domain)
+	
+	
 	user1=getusername()
 	if user1=="error":
 		print "short user is correct"
 	else:
 		user=user1
-	print "user "+user
+	#print "user "+user
 		
 	adhandle=aduser.ADUser.from_cn(user)
-	print adhandle	
+	#print adhandle	
 	#print adhandle.adsPath
 	print "Connected as User "+user
 	ad1=aduser.ADUser.from_cn("proxy ldap")
 	edir=ad1.Description.split(" ")
+	#print edir
 	return edir,adhandle
 
 
@@ -538,8 +568,10 @@ def inc(ldapsrv,cmd,user,pw):
 		lscriptrans1(scr)
 	 
 def lscriptrans(script):
+	ifprocess=0
 	cmds=scr.split("\r\n")
 	for temp in cmds:
+		
 		temp=temp.lower()
 		if "set" in temp or "dos set" in temp:
 			print "\n"
@@ -560,6 +592,29 @@ def lscriptrans(script):
 			if line in temp:
 				print "Command Dropped"
 				continue
+		print temp
+		if "if \"%" in temp.lower():
+			ifmarker=1
+			temp1=temp.split(" ")
+			print temp1
+			vals=temp1[1].split("=")
+			vals[1]=vals[1].replace("\"","")
+			vals[0]=vals[0].replace("\"","")
+			vals[0]=vals[0].replace("%","")
+			
+			envvar=vals[0]
+			try:
+				val1=os.environ.get(envvar)
+				print val1
+			except:
+				print "Not found"
+				status=1
+			ifprocess=1
+			if val1==vals[1]:
+				status=0
+				print "STATUS: Start IF Process. Env Variable Check Passed"
+				
+			
 	
 		if "if member of".lower() in temp.lower():
 			#print "if member of found"
@@ -623,6 +678,7 @@ def lscriptrans1(lscript):
 	cmds=lscript.split("\r\n")
 
 	for temp in cmds:
+		
 		temp=temp.lower()
 		if "set" in temp or "dos set" in temp:
 			print "\n"
@@ -636,17 +692,36 @@ def lscriptrans1(lscript):
 			print "\n"
 			continue
 	
-			
-
-			
-	
 		if "exit" == temp:
 			print "STATUS: Login Script Finished"
-			break
+			return
 		for line in excluded_commands:
 			if line in temp:
 				print "Command Dropped"
 				continue
+		print temp
+		if "if \"%" in temp.lower():
+			ifmarker=1
+			temp1=temp.split(" ")
+			print temp1
+			vals=temp1[1].split("=")
+			vals[1]=vals[1].replace("\"","")
+			vals[0]=vals[0].replace("\"","")
+			vals[0]=vals[0].replace("%","")
+			
+			envvar=vals[0]
+			try:
+				val1=os.environ.get(envvar)
+				print val1
+			except:
+				print "Not found"
+				status=1
+			ifprocess=1
+			if val1==vals[1]:
+				status=0
+				print "STATUS: Start IF Process. Env Variable Check Passed"
+				
+			
 	
 		if "if member of".lower() in temp.lower():
 			#print "if member of found"
@@ -685,9 +760,20 @@ def lscriptrans1(lscript):
 			ifprocess=0
 			print "STATUS: End of IF Statement"
 			print "\n"
-
+	
+		if "include" in temp.lower():
+			ndap=temp.split(" ")[1]
+			ldapobj=ldappath(ndap)
+			ldapobj=ldapobj.replace("cn=,","")
+			print "\n"
+			print "STATUS: Running Include from " +ldapobj
+			status=inc("ldaps://"+edir[0],"include "+ldapobj,edir[1],edir[2])
+			print "\n"
+	
+	
+	
 	print "\n"
-	print "STATUS:Login Script Processing Finished"
+	print "STATUS: Include Login Script Processing Finished"
 	print "\n"
 	return
 
@@ -742,6 +828,7 @@ print
 grp=xmlparse(nurm)
 
 print "\n"
+
 
 lscript=findous("ldaps://"+edir[0],dn,edir[1],edir[2])
 l=len(lscript)
