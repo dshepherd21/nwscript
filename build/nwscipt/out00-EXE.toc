@@ -1,0 +1,9 @@
+('C:\\nwscript\\dist\\nwscipt.exe',
+ True,
+ False,
+ None,
+ None,
+ [],
+ None,
+ False,
+ 1438185078L)
