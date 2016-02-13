@@ -1,0 +1,6 @@
+	map t:=\\oes-2015\data
+	map n:=\\192.168.10.50\data
+	if member of "test"
+		map x:=\\192.168.10.50\data
+	end
+#cls1
