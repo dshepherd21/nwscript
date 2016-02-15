@@ -20,14 +20,238 @@ import win32api
 #pyad.pyad_setdefaults(ldap_server="192.168.10.51")
 from Crypto.Cipher import DES
 
+
+def sub(line):
+	for temp in option:
+		if temp in line:
+			line=line.replace(temp,option[temp])
+	return(line)
+	
+def optsetup(temp=[]):
+	"""Populate Options for Macros"""
+	for line in temp.iterkeys():
+		
+		if line=="%home_directory":
+			temp[line]=os.environ['HOMESHARE']
+		if line=="%cn" or line=="%login_name":
+			temp[line]=os.environ['USERNAME']
+		if line=="%file_server":
+			temp[line]=os.environ['LOGONSERVER']
+		if line=="%os":
+			temp[line]=os.environ['OS']
+		if line=="%language":
+			temp[line]=os.environ['LANGUAGE']
+		if line=="%network_address":
+			temp[line]=socket.gethostbyname(socket.gethostname())
+		
+			
+	return(temp)
+	
+
+def errorlog(name,line):
+	details="ERROR: "+name+" error in line "+str(line)+"\n"
+	errors.write(details)
+	print details
+	return
+	
+def scriptproc(cmds):
+	status=0
+	ifproc=0
+	"""Core Login Script Processing Function"""
+	ifprocess=0
+	count=1
+	for temp in cmds:
+		#print temp
+		temp=temp.lower()
+		if "write" in temp:
+			try:
+				temp1=temp.split("\"")
+				temp1=temp1[1]
+				temp1=sub(temp1)
+				print temp1
+			except:
+				errorlog("Write Command Invalid",count)
+			
+		if "set" in temp or "dos set" in temp:
+			print "\n"
+			try:
+				pts=temp.split(" ")
+				params=pts[-1].split("=")
+			except:
+				# print "ERROR in line "+count
+				errorlog("set failed",count)
+				print "\n"
+	
+			print "STATUS: Setting Env Variable "+params[0]+" to "+params[1]
+			try:
+				os.system("setx "+params[0]+" "+params[1])
+			except:
+				errorlog("Client does not have setx.exe installed",count)
+			print "\n"
+			continue
+	
+		if "exit" == temp:
+			print "STATUS: Login Script Finished"
+			return
+		
+		for line in excluded_commands:
+			if line in temp:
+				print "\n"
+				print "STATUS: Command Dropped "+temp+" In Line "+str(count)
+				print "\n"
+				continue
+		
+		if "if \"%" in temp.lower():
+			ifmarker=1
+			try:
+				temp1=temp.split(" ")
+				#print temp1
+				vals=temp1[1].split("=")
+				vals[1]=vals[1].replace("\"","")
+				vals[0]=vals[0].replace("\"","")
+				vals[0]=vals[0].replace("%","")
+			
+				envvar=vals[0]
+			except:
+				#print "ERROR: Command error in line "+count
+				errorlog("Command error in if command",count)
+				continue
+			try:
+				val1=os.environ.get(envvar)
+				#print val1
+			except:
+				errorlog("Env Variable Not Found",count)
+				status=1
+				continue
+			ifprocess=1
+			if val1==vals[1]:
+				status=0
+				print "STATUS: Start IF Process. Env Variable Check Passed"
+				
+			
+	
+		if "if member of".lower() in temp.lower():
+			#print "if member of found"h
+			ifmarker=1
+			try:
+				temp1=temp.split("\"")
+				name=groupname(temp1[1])
+			except:
+				errorlog("IF Failed",count)
+				continue
+			print "\n"
+			print "STATUS Group found is "+name
+			
+			if "." in name:
+				ldapgroup=ldappath(temp1[1])
+				name=checkad(ldapgroup)
+				print "Matched AD Group is "+name	
+		
+				usermember=aduser.get_attribute("memberOf")
+				status=adgrp(usermember,name)
+				ifprocess=1
+				if status==0:
+					print "STATUS: START IF statenent. User is member of group so drives mapped.."
+					print
+			else:
+				print "STATUS: Group Not Found in AD"
+				status=1
+				ifprocess=1
+				print "\n"
+				
+		if ifprocess==1 and status<>0 and "map" in temp.lower():
+			print "STATUS: Failed if check command not executed line "+str(count)
+			continue		
+		
+		if ifprocess==1 and status==0 and "map" in temp.lower():
+			temp=temp.lower().replace("map root","map")
+			try:
+				mapbits=temp.lower().split(" ")
+				print mapbits[1]
+				drive,path=checkpath(mapbits[1])
+				print drive,path
+				if path.lower()=="%home_directory":
+					path=homedir[0]
+				status=drvmap(drive,path)
+			except:
+				errorlog("Drive Map Failed Inside IF",count)
+				continue
+			
+		if ifprocess==0 and "map" in temp.lower():
+			
+			temp=temp.lower().replace("map root","map")
+			try:
+				mapbits=temp.lower().split(" ")
+			
+				drive,path=checkpath(mapbits[1])
+				print drive,path
+				#if path.lower()=="%home_directory":
+					#path=homedir[0]
+				path=sub(path)
+				status=drvmap(drive,path)
+				#sys.exit()
+			except:
+				errorlog("Drive Map Failed Outside IF",count)
+		
+		if "end".lower() in temp.lower():
+			ifprocess=0
+			status=0
+			print "STATUS: ENDIF Statement"
+			print "\n"
+	
+		if "include" in temp.lower():
+			ndap=temp.split(" ")[1]
+			ldapobj=ldappath(ndap)
+			ldapobj=ldapobj.replace("cn=,","")
+			print "\n"
+			print "STATUS: Running Include from " +ldapobj
+			status=inc("ldaps://"+edir[0],"include "+ldapobj,edir[1],edir[2])
+			print "\n"
+		if "#" == temp[0:1]:
+			print "STATUS: Running external script"
+			cmdline=temp[1:].replace("\n","")
+			stat=os.system(cmdline)
+			if stat<>0:
+				errorlog("Script Returned an Error State",count)
+				#print "ERROR: Script returned an Error State"
+		count=count+1
+			
+
+	print "\n"
+	print "Script Processing Finished"
+	print "\n"
+
+	return
+
+def userlscript():
+	"""Running the Users Login Script as a File in the AD Home Directory userslogin.scr"""
+	
+	if homedir=="" or homedrive=="":
+		print "STATUS: No Home Folder or Home Drive Letter Set"
+	lscr=homedrive[0]+"\\userlogin.scr"
+	if os.path.isfile(lscr):
+		print
+		print "STATUS: Running User Login Script"
+		print 
+		loc=open(lscr,"r").read()
+		loc=loc.replace("\r","")
+		lscriptrans3(loc)
+		return(0)
+	else:
+		print
+		print "STATUS: No User Login Script Found"
+		print 
+		return(1)
+	
+
 def pad(key):
 	if len(key)>8:
 		padl=16
 	else:
 		padl=8
 	key=key+" "*(padl-len(key))
-	print key,":"
-	print len(key)
+	#print key,":"
+	#print len(key)
 	return(key)
 
 def encrypt(pw,key1):
@@ -78,13 +302,16 @@ def edirconf(ldapsrvr,basedn,user,pw):
 	return groups,volume
 
 def dnslookup(address):
+	"""Lookup DNS Name from IP Address"""
 	try:
 		temp=socket.gethostbyaddr(address)
 		return(temp[0])
 	except:
 		print "ERROR: No DNS Name Found"
 		return("error")
+		
 def checkip(address):
+	"""Check format of IP Address"""
 	try:
 		IP(address)
 		return 0
@@ -92,6 +319,7 @@ def checkip(address):
 		return -1
 
 def checkpath(unc):
+	"""Check UNC Path"""
 	temp=unc.split(":=")
 	return(temp[0],temp[1])
 
@@ -321,6 +549,30 @@ def findusers(ldapsrv,base_dn,user,passw):
 	grplist=l.search_s( base_dn,ldap.SCOPE_SUBTREE,filter,attrs)
 	return(grplist)
 	
+def namedgroups(ldapsrv,base_dn,grpname,user,passw):
+     l=ldap.initialize(ldapsrv)
+     try:
+        #l.start_tls_s()
+        l.bind_s(user, passw)
+     except ldap.INVALID_CREDENTIALS:
+        print "Your username or password is incorrect."
+        sys.exit()
+     except ldap.LDAPError, e:
+        print e.message['info']
+        if type(e.message) == dict and e.message.has_key('desc'):
+            print e.message['desc']
+        
+	else:
+            sys.exit()
+     except ldap.NO_SUCH_OBJECT:
+	print "Object Not Found"
+	sys.exit()
+
+     attrs = ['cn','objectClass','ACL']
+     filter=('(&(objectclass=groupOfNames)(cn='+grpname+'))')
+     grplist=l.search_s( base_dn,ldap.SCOPE_SUBTREE,filter,attrs)
+     return(grplist)	
+	
 def findgroups(ldapsrv,base_dn,user,passw):
      l=ldap.initialize(ldapsrv)
      try:
@@ -341,7 +593,7 @@ def findgroups(ldapsrv,base_dn,user,passw):
 	sys.exit()
 
      attrs = ['cn','objectClass','ACL']
-     filter=('objectclass=groupOfNames')
+     filter=('(objectclass=groupOfNames)')
      grplist=l.search_s( base_dn,ldap.SCOPE_SUBTREE,filter,attrs)
      return(grplist)	
 
@@ -404,17 +656,17 @@ def makeunc(path,dns):
 		return(path)
 	if "/" in path:
 		temp=path.split("/")
-		print len(temp)
+		#print len(temp)
 		srv=temp[0]
 		path=temp[1].split(":")
 		
 		unc1="\\\\"+srv+"."+dns+"\\"+path[0]+"\\"+path[1]
 	if "\\" in path:
 		temp=path.split("\\")
-		print len(temp)
+		# print len(temp)
 		srv=temp[0]
 		path=temp[1].split(":")
-		print temp
+		#print temp
 		sys.exit()
 		unc1="\\\\"+srv+"."+dns+"\\"+path[0]+"\\"+path[1]
 		print unc1
@@ -446,6 +698,7 @@ def checkad(groupname):
 		return(groupname)
 			
 def adgrp(grps,name):
+	"""Check AD Group Membership"""
 	for temp in grps:
 		#print temp
 		#print "cn="+name
@@ -454,11 +707,12 @@ def adgrp(grps,name):
 			status=0
 			return(status)
 	status=1
-	print "User is not a member of Group"
+	print "STATUS: User is not a member of Group"
 	return(status)
 
 
 def connect():
+	"""Establish Current logged in Name of User"""
 	user=os.environ["USERNAME"]
 	domain=os.environ["USERDOMAIN"]
 	domain=pad(domain)
@@ -466,7 +720,7 @@ def connect():
 	
 	user1=getusername()
 	if user1=="error":
-		print "short user is correct"
+		print "STATUS: short user is correct"
 	else:
 		user=user1
 	#print "user "+user
@@ -474,7 +728,7 @@ def connect():
 	adhandle=aduser.ADUser.from_cn(user)
 	#print adhandle	
 	#print adhandle.adsPath
-	print "Connected as User "+user
+	print "STATUS: Connected as User "+user
 	ad1=aduser.ADUser.from_cn("proxy ldap")
 	edir=ad1.Description.split(" ")
 	#print edir
@@ -482,41 +736,61 @@ def connect():
 
 
 def drvmap(drive,path):
+	"""Drive Mapping Helper Function"""
+	print "\n"
 	print "Mapping Drive "+drive+": to "+path
 	print "==========================================="
 	if "/" in path:
 		path=chunc(path)
 	
 	found=0
-	for temp in volumes:
-		if temp in path:
-			found=1
-	#print found
-	if found==0:
-			print "NSSAD Volume Not Found"
-			print temp,path
-			found=0
-			return -1
+	
+	path1=path
+	path1=path1.replace("."+suffix,"")
+	#print path1
+		
+	
 
 	if "\\" in path:
-		server=path.split("\\")
-		server=server[2]
+		server1=path.split("\\")
+		server=server1[2]
 		servertemp=server
 		status=checkip(server)
-		#print server
-		#print status
+		
 		if status==0:
-			#print "Change IP Address to DNS Name"
+			print "Change IP Address to DNS Name"
 			dns=dnslookup(server)
-			#print dns
+			#dns="oes-2015.ds.com"
+			server=dns
+			path1="\\\\"+dns+"\\"+server1[-1]
+			drvpath=path.replace("\\\\"+servertemp+"\\","")
+			
+			
+			
 		if status==-1:
-			#print "Sever Name Not IP Address"
+			print "Sever Name Not IP Address"
 			if "." not in server:
 				server=server+"."+suffix
+			
 			drvpath=path.replace("\\\\"+servertemp+"\\","")
-			#print drvpath
+			
 		#print drive
 		#print server
+		
+		
+		for temp in volumes:
+			path2=path1.replace("."+suffix,"")
+			if temp in path2:
+				found=1
+	
+		if found==0:
+			print "\n"
+			print "STATUS: NSSAD Volume Not Found"
+			print "STATUS: "+path1+" Not found as configured for NSSAD"
+			print "===================================================="
+			print "\n"
+			found=0
+			return -1
 		print
 		mapDrive(drive+":", "\\\\"+server+"\\"+drvpath, None, None,force=1)
 		print
@@ -546,7 +820,9 @@ def getLocalDomainSuffix():
 	#print value,type
 	return value
 	
-def inc(ldapsrv,cmd,user,pw):
+def inc(psrv,cmd,user,pw):
+	#print psrv
+	ldapsrv=psrv
 	"""Code for dealing with login script includes"""
 	cmds=cmd.split(" ")
 	#print cmds
@@ -558,7 +834,7 @@ def inc(ldapsrv,cmd,user,pw):
 	lscript=findous(ldapsrv,cmds[1],user,pw)
 	
 	if len(lscript)==0:
-		print "Include File not found"
+		errorlog("Include File Not Found in EDIR",count)
 		return -1
 	for temp in lscript:
 		scr=temp[1]["loginScript"][0]
@@ -567,102 +843,12 @@ def inc(ldapsrv,cmd,user,pw):
 		print "\n"
 		lscriptrans1(scr)
 	 
-def lscriptrans(script):
+def lscriptrans(script1):
+	status=0
 	ifprocess=0
-	cmds=scr.split("\r\n")
-	for temp in cmds:
-		
-		temp=temp.lower()
-		if "set" in temp or "dos set" in temp:
-			print "\n"
-			pts=temp.split(" ")
-			params=pts[-1].split("=")
-			print "STATUS: Setting Env Variable "+params[0]+" to "+params[1]
-			try:
-				os.system("setx "+params[0]+" "+params[1])
-			except:
-				print "ERROR: Client does not have setx.exe installed"
-			print "\n"
-			continue
-	
-		if "exit" == temp:
-			print "STATUS: Login Script Finished"
-			return
-		for line in excluded_commands:
-			if line in temp:
-				print "Command Dropped"
-				continue
-		print temp
-		if "if \"%" in temp.lower():
-			ifmarker=1
-			temp1=temp.split(" ")
-			print temp1
-			vals=temp1[1].split("=")
-			vals[1]=vals[1].replace("\"","")
-			vals[0]=vals[0].replace("\"","")
-			vals[0]=vals[0].replace("%","")
-			
-			envvar=vals[0]
-			try:
-				val1=os.environ.get(envvar)
-				print val1
-			except:
-				print "Not found"
-				status=1
-			ifprocess=1
-			if val1==vals[1]:
-				status=0
-				print "STATUS: Start IF Process. Env Variable Check Passed"
-				
-			
-	
-		if "if member of".lower() in temp.lower():
-			#print "if member of found"
-			ifmarker=1
-			temp1=temp.split("\"")
-			name=groupname(temp1[1])
-		
-			ldapgroup=ldappath(temp1[1])
-			name=checkad(ldapgroup)
-			print "Matched AD Group is "+name	
-		
-			usermember=aduser.get_attribute("memberOf")
-			status=adgrp(usermember,name)
-			ifprocess=1
-			if status==0:
-				print "STATUS: Start IF statenent. User is member of group so drives mapped.."
-				print
-		
-		if ifprocess==1 and status==0 and "map" in temp.lower():
-			temp=temp.lower().replace("map root","map")
-			mapbits=temp.lower().split(" ")
-			#print mapbits[1]
-			drive,path=checkpath(mapbits[1])
-			#print drive,path
-			status=drvmap(drive,path)
-			
-		if ifprocess==0 and "map" in temp.lower():
-			temp=temp.lower().replace("map root","map")
-			mapbits=temp.lower().split(" ")
-			#print mapbits[1]
-			drive,path=checkpath(mapbits[1])
-			#print drive,path
-			status=drvmap(drive,path)
-		
-		if "end".lower() in temp.lower():
-			ifprocess=0
-			print "STATUS: End of IF Statement"
-			print "\n"
-	
-		if "include" in temp.lower():
-			ndap=temp.split(" ")[1]
-			ldapobj=ldappath(ndap)
-			ldapobj=ldapobj.replace("cn=,","")
-			print "\n"
-			print "STATUS: Running Include from " +ldapobj
-			status=inc("ldaps://"+edir[0],"include "+ldapobj,edir[1],edir[2])
-			print "\n"
-		
+	cmds=script1.split("\r\n")
+	scriptproc(cmds)
+	userlscript()
 	print "\n"
 	print "STATUS:Login Script Processing Finished"
 	print "\n"
@@ -674,166 +860,104 @@ def lscriptrans(script):
 
 
 def lscriptrans1(lscript):
+	"""Function to process login script includes"""
 	ifprocess=0
 	cmds=lscript.split("\r\n")
-
-	for temp in cmds:
-		
-		temp=temp.lower()
-		if "set" in temp or "dos set" in temp:
-			print "\n"
-			pts=temp.split(" ")
-			params=pts[-1].split("=")
-			print "STATUS: Setting Env Variable "+params[0]+" to "+params[1]
-			try:
-				os.system("setx "+params[0]+" "+params[1])
-			except:
-				print "ERROR: Client does not have setx.exe installed"
-			print "\n"
-			continue
-	
-		if "exit" == temp:
-			print "STATUS: Login Script Finished"
-			return
-		for line in excluded_commands:
-			if line in temp:
-				print "Command Dropped"
-				continue
-		print temp
-		if "if \"%" in temp.lower():
-			ifmarker=1
-			temp1=temp.split(" ")
-			print temp1
-			vals=temp1[1].split("=")
-			vals[1]=vals[1].replace("\"","")
-			vals[0]=vals[0].replace("\"","")
-			vals[0]=vals[0].replace("%","")
-			
-			envvar=vals[0]
-			try:
-				val1=os.environ.get(envvar)
-				print val1
-			except:
-				print "Not found"
-				status=1
-			ifprocess=1
-			if val1==vals[1]:
-				status=0
-				print "STATUS: Start IF Process. Env Variable Check Passed"
-				
-			
-	
-		if "if member of".lower() in temp.lower():
-			#print "if member of found"
-			ifmarker=1
-			temp1=temp.split("\"")
-			name=groupname(temp1[1])
-		
-			ldapgroup=ldappath(temp1[1])
-			name=checkad(ldapgroup)
-			print "Matched AD Group is "+name	
-		
-			usermember=aduser.get_attribute("memberOf")
-			status=adgrp(usermember,name)
-			ifprocess=1
-			if status==0:
-				print "STATUS: Start IF statenent. User is member of group so drives mapped.."
-				print
-		
-		if ifprocess==1 and status==0 and "map" in temp.lower():
-			temp=temp.lower().replace("map root","map")
-			mapbits=temp.lower().split(" ")
-			#print mapbits[1]
-			drive,path=checkpath(mapbits[1])
-			#print drive,path
-			status=drvmap(drive,path)
-			
-		if ifprocess==0 and "map" in temp.lower():
-			temp=temp.lower().replace("map root","map")
-			mapbits=temp.lower().split(" ")
-			#print mapbits[1]
-			drive,path=checkpath(mapbits[1])
-			#print drive,path
-			status=drvmap(drive,path)
-		
-		if "end".lower() in temp.lower():
-			ifprocess=0
-			print "STATUS: End of IF Statement"
-			print "\n"
-	
-		if "include" in temp.lower():
-			ndap=temp.split(" ")[1]
-			ldapobj=ldappath(ndap)
-			ldapobj=ldapobj.replace("cn=,","")
-			print "\n"
-			print "STATUS: Running Include from " +ldapobj
-			status=inc("ldaps://"+edir[0],"include "+ldapobj,edir[1],edir[2])
-			print "\n"
-	
-	
-	
+	scriptproc(cmds)
 	print "\n"
 	print "STATUS: Include Login Script Processing Finished"
 	print "\n"
 	return
 
+def lscriptrans3(script1):
+	"""Processing of user login script"""
+	ifprocess=0
+	cmds=script1.split("\n")
+	
+	#cmds=scr.split("\r\n")
+	scriptproc(cmds)		
+
+	print "\n"
+	print "STATUS: User Login Script Processing Finished"
+	print "\n"
+
+	return
 
 
 
-excluded_commands=["map display","map errors","map ins"]
+
+excluded_commands=["map display","map errors","map ins","no_default"]
 
 parser = OptionParser()
 
 parser.add_option("-d","--dn",help="Edir Login Script")
-parser.add_option("-l","--home",help="Home Dir Drive Letter")
 parser.add_option("-n","--nurm",help="NURM XML Group File Path")
 parser.add_option("-c","--conf",help="Config in EDIR")
-#parser.add_option("-s","--suffix",help="AD DNS Suffix")
+
 
 
 (options, args) = parser.parse_args()
 
-#required=["dn","nurm","unc"]
+
 required=["dn","conf"]
 
 for m in required:
 	if not options.__dict__[m]:
-		print m
+		#print m
 		print "Mandatory option is missing\n"
 		parser.print_help()
 		sys.exit(-1)
+
+
+option={"%cn":"",
+"%language":"",
+"%login_name":"",
+"%os":"",
+"%file_server":"",
+"%network_address":"",
+"%home_directory":"",}
+
+option=optsetup(option)
+
 status=0
 nurm=options.nurm
 dn=options.dn
 suffix=getLocalDomainSuffix()
 edir,aduser=connect()
 conf=options.conf
+logloc=os.getenv("TEMP")+"\\lscript.log"
+
 
 #confitems=findos("ldap://"+edir[0]+":389",conf,edir[1],edir[2])
 nurm,volumes=edirconf("ldaps://"+edir[0],conf,edir[1],edir[2])
 if len(nurm)==0 or len(volumes)==0:
-	print "ERROR: No Configuration Information in EDIR"
+	errorlog("No Configuration Information in EDIR",0)
+	#print "ERROR: No Configuration Information in EDIR"
 	sys.exit(-1)
 
 
 os.system("cls")
-
-
+ver="0.5"
+print "LOGON SCRIPT PROCESSOR\t"+ver
+print "\n"
 print "LDAP Server is \t\t"+edir[0]+":636"
 print "User Proxy is \t\t"+edir[1]
 print "AD DNS Suffix \t\t"+suffix
 print "EDIR CONF \t\t"+conf
-print 
+print "AD User is \t\t"+os.getenv("USERNAME")
+print "Log File location \t"+logloc
 
+errors=open(logloc,"w")
 grp=xmlparse(nurm)
 
 print "\n"
-
+homedir=aduser.get_attribute("homeDirectory")
+homedrive=aduser.get_attribute("homeDrive")
 
 lscript=findous("ldaps://"+edir[0],dn,edir[1],edir[2])
 l=len(lscript)
 if l==0:
-	print "ERROR: No Login Script found in EDIR"
+	errorlog("No Login Script Found in EDIR",0)
 	sys.exit()
 ifprocess=0
 print "STATUS: Processing Novell Login Script"
