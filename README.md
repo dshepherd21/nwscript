@@ -10,6 +10,7 @@ This code is written in Annaconda Python 2.7 and is compiled using pyinstaller t
 
 Installation
 ==============
+An LDIF file is provided to add to an existing tree and is called nssad.ldif.
 
 So the first step for the installation is the addition of the schema file to edir. This is an AUX class to be added ot an O object at the top of the tree. This object has two attributes in called ...
 
@@ -29,7 +30,7 @@ From the AD side a user called "ldap proxy" needs to be created. The password th
 
 So the description for that user needs to show the following "oes.ds.com cn=ldapproxy,o=home password" with the fields being changed to match your enviroment.
 
-Usaage
+Usage
 =======
 
 nwscipt.exe is requried to e copied to (Assume domain is "ds.com) \\ds.com\netlogon\nwscipt.exe on a DC in the domain. This DC wil then replicate this file round the domain. Within this location there needs to be a login script that this utility ican be appended to. This utility can be executed by :
@@ -39,8 +40,20 @@ nwscipt.exe -d ou=xx,o=xx -c o=xx
 The -d parameter refers to the DN in ldap of the object that holds the login script.
 The -c parameter refers to the config object aux class that is assigned to the o of the tree.
 
+User Login Scripts
+==================
+Provided is an import routine that will take out the users edir personal login script and export it as a .scr file to the users home directory in AD.
+
+Logging
+=======
+
+A log file is created in the temp directory.
+
 Limitations
 ============
 1) Will not support changing search drives. Makes no sense to replicate.
-2) Will support includes to directory objects not includes to filess
+2) Will support includes to directory objects not includes to files
+3) Will not currently support the use of volume objects in MAP commands as edir DNs (will work in future).
+4) No support for Fire Phasers :-(
+5) Does not work with env variables that just use <%os> as a marker in the login script (will work in future)
 
