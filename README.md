@@ -58,9 +58,14 @@ A log file is created in the temp directory.
 Limitations
 ============
 1) Will not support changing search drives. Makes no sense to replicate.
+
 2) Will support includes to directory objects not includes to files
+
 3) Will not currently support the use of volume objects in MAP commands as edir DNs (will work in future).
+
 4) No support for Fire Phasers :-(
+
 5) Some enviroment variables will now work such as %os, %home_directory.
+
 6) Personal login scripts will work. Use the usersc.py file to export the users existing login scripts to a script file (.scr) that will be copied in to each AD users home folder. A users home folder needs to be set for this to work. The .scr file is then a text file that can edited and have exta lines added by any text editor.
 
